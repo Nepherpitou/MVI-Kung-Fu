@@ -1,0 +1,2 @@
+include ':app', ':MVIKungFu'
+rootProject.name='MVI Sample'
