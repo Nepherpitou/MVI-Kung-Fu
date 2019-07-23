@@ -98,15 +98,21 @@ class MainFragment : Fragment() {
         super.onViewCreated(view, savedInstanceState)
         scope.launch {
             while (!controller.states.isEmpty) controller.states.receive()
-            savedInstanceState
-                ?.getParcelable<MainState>("state")
-                ?.let { ss -> controller.messages.send { ss to emptyList() } }
-            controller.messages.send(msgEffect(renderStateEffect(this@MainFragment, renders)))
             val os = controller.states.broadcast(1024)::openSubscription
             val (rs, ss, ls) = Triple(os(), os(), os())
             launch { for (r in renderStates(rs, renders)) r(this@MainFragment) }
-            launch { for (s in ss) saveState = { it.putParcelable("state", s) } }
+            launch {
+                for (s in ss) saveState = {
+                    it.putParcelable("state", s)
+                    Log.d("State", "Saved: $s")
+                }
+            }
             launch { for (s in ls) Log.d("State", "$s") }
+            savedInstanceState
+                ?.getParcelable<MainState>("state")
+                ?.also { Log.d("State", "Restored: $it") }
+                ?.let { s -> controller.messages.send { s to emptyList() } }
+            controller.messages.send(msgEffect(renderStateEffect(this@MainFragment, renders)))
         }
         view.refresh.setOnRefreshListener { controller.messages.offer(msgRefresh()) }
         view.search.setOnClickListener { controller.messages.offer(msgSearch()) }

@@ -80,6 +80,7 @@ abstract class ElmController<EffectCtx, State>(default: State) {
 
     fun start() {
         scope.launch {
+            messages.send(init())
             for (msg in _messages) {
                 val (new, effects) = msg(state)
                 state = new
@@ -87,7 +88,6 @@ abstract class ElmController<EffectCtx, State>(default: State) {
                 effects.forEach { launch { it(wrap(messages), effectContext(), state) } }
             }
         }
-        messages.offer(init())
     }
 
     fun stop() {
