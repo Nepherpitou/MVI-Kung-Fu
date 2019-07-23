@@ -54,6 +54,7 @@ interface MainCtx {
 data class MainState(
     val query: String = "",
     val results: List<GifObject> = emptyList(),
+    val resultsQuery: String = "",
     val loading: Boolean = false
 ) : Parcelable
 
@@ -77,7 +78,8 @@ class MainFragment : Fragment() {
     private val controller by lazy { MainController(effectCtx) }
     private val renders: List<MainRender> = listOf(
         renderItems(),
-        renderLoader(),
+        renderRefreshing(),
+        renderLoading(),
         renderQuery()
     )
 
@@ -100,15 +102,18 @@ class MainFragment : Fragment() {
                 ?.getParcelable<MainState>("state")
                 ?.let { ss -> controller.messages.send { ss to emptyList() } }
             controller.messages.send(msgEffect(renderStateEffect(this@MainFragment, renders)))
-            val (rs, ss) = controller.states.broadcast(1024).run { openSubscription() to openSubscription() }
+            val os = controller.states.broadcast(1024)::openSubscription
+            val (rs, ss, ls) = Triple(os(), os(), os())
             launch { for (r in renderStates(rs, renders)) r(this@MainFragment) }
             launch { for (s in ss) saveState = { it.putParcelable("state", s) } }
+            launch { for (s in ls) Log.d("State", "$s") }
         }
         view.refresh.setOnRefreshListener { controller.messages.offer(msgRefresh()) }
         view.search.setOnClickListener { controller.messages.offer(msgSearch()) }
         view.query.addTextChangedListener(queryWatcher)
         view.recycler.adapter = adapter
         view.recycler.layoutManager = LinearLayoutManager(view.context, RecyclerView.VERTICAL, false)
+        view.recycler.addOnScrollListener(loadMoreListener { controller.messages.offer(msgLoadMore()) })
     }
 
     override fun onDestroyView() {
@@ -132,6 +137,16 @@ class MainFragment : Fragment() {
     }
 }
 
+private fun loadMoreListener(threshold: Int = 3, loadMore: () -> Unit) = object : RecyclerView.OnScrollListener() {
+    override fun onScrolled(recyclerView: RecyclerView, dx: Int, dy: Int) {
+        (recyclerView.layoutManager as? LinearLayoutManager)?.let { lm ->
+            if (lm.findLastVisibleItemPosition() > (recyclerView.adapter?.itemCount ?: threshold) - threshold) {
+                loadMore()
+            }
+        }
+    }
+}
+
 private fun textWatcher(textChanged: (String) -> Unit) = object : TextWatcher {
     override fun afterTextChanged(s: Editable) {
         textChanged(s.toString())
@@ -145,47 +160,82 @@ private fun textWatcher(textChanged: (String) -> Unit) = object : TextWatcher {
 
 }
 
-private fun msgRefresh(): MainMsg = msgSearch()
+private fun msgLoadMore(): MainMsg = msgEffects(
+    { s -> s.copy(loading = true) },
+    { s -> listOf(effectLoadMore()).takeIf { !s.loading }.orEmpty() }
+)
+
+private fun msgRefresh(): MainMsg = msgEffects(
+    { it.copy(loading = true) },
+    { listOf(effectSearch()) })
 
 private fun msgQuery(query: String): MainMsg = msgState { it.copy(query = query) }
 
 private fun msgSearch(): MainMsg = msgEffects(
-    { it.copy(loading = true) },
+    { s -> s.copy(loading = true, resultsQuery = s.query) },
     { listOf(effectSearch()) }
 )
 
-private fun msgFound(items: List<GifObject>): MainMsg = msgState { it.copy(loading = false, results = items) }
+private fun msgFound(items: List<GifObject>): MainMsg = msgState { s -> s.copy(loading = false, results = items) }
+
+private fun msgLoaded(items: List<GifObject>): MainMsg = msgState { s ->
+    s.copy(loading = false, results = s.results + items)
+}
+
 private fun msgFail(e: Exception): MainMsg = msgEffects(
     { it.copy(loading = false, results = emptyList()) },
     { listOf(effectFail(e)) }
 )
 
 private fun effectSearch(): MainEffect = { ctx, s ->
-    val msg = when (val r = ctx.value.repository.search(s.query, 0, 20)) {
+    val msg = when (val r = ctx.repository.search(s.resultsQuery, 0, 20)) {
         is Right -> msgFound(r.v)
         is Left -> msgFail(r.v)
     }
-    ctx.channel.send(msg)
+    messages.send(msg)
 }
 
-private fun effectFail(e: Exception): MainEffect = { ctx, s ->
-    ctx.value.failToast(e)
+private fun effectFail(e: Exception): MainEffect = { ctx, _ ->
+    ctx.failToast(e)
+}
+
+private fun effectLoadMore(): MainEffect = { c, s ->
+    val msg = when (val r = c.repository.search(s.resultsQuery, s.results.count(), 20)) {
+        is Right -> msgLoaded(r.v)
+        is Left -> msgFail(r.v)
+    }
+    messages.send(msg)
 }
 
 private fun renderItems() = renderT<MainView, MainState, List<GifObject>>(
     { it.results },
     { f, s ->
         f.run {
-            adapter.items.clear()
-            adapter.items.addAll(s.map { MainElement.Item(it) })
+            adapter.items = s.map { MainElement.Item(it) }
             adapter.notifyDataSetChanged()
         }
     }
 )
 
-private fun renderLoader() = renderT<MainView, MainState, Boolean>(
-    { it.loading },
-    { f, s -> f.refresh.isRefreshing = s.also { Log.d("RenderLoader", "Refreshing is $s") } }
+private fun renderRefreshing() = renderT<MainView, MainState, Boolean>(
+    { it.loading && it.results.isEmpty() },
+    { f, s -> f.refresh.isRefreshing = s }
+)
+
+private fun renderLoading() = renderT<MainView, MainState, Boolean>(
+    { it.loading && it.results.isNotEmpty() },
+    { f, s ->
+        when (s) {
+            true -> {
+                f.adapter.items = f.adapter.items + MainElement.Loader
+                f.adapter.notifyItemInserted(f.adapter.itemCount - 1)
+            }
+            false -> {
+                f.adapter.items = f.adapter.items.filter { it !is MainElement.Loader }
+                f.adapter.notifyDataSetChanged()
+            }
+        }
+    }
 )
 
 private fun renderQuery() = renderT<MainView, MainState, String>(

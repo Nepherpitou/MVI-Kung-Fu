@@ -38,9 +38,9 @@ fun msgInit(): SplashMsg = msgEffects(
     { listOf(effectInit()) }
 )
 
-fun effectInit(): SplashEffect = { ctx, state ->
+fun effectInit(): SplashEffect = { ctx, _ ->
     delay(1000)
-    ctx.value.route { newRootScreen(Screens.Main) }
+    ctx.route { newRootScreen(Screens.Main) }
 }
 
 class SplashFragment : Fragment() {

@@ -5,7 +5,7 @@ import androidx.recyclerview.widget.RecyclerView
 
 class DelegateAdapter<T>(vararg delegate: AdapterDelegate<T>) : RecyclerView.Adapter<BaseHolder>() {
 
-    val items: MutableList<T> = mutableListOf()
+    var items: List<T> = emptyList()
     private val manager = AdapterDelegateManager<T>()
 
     init {

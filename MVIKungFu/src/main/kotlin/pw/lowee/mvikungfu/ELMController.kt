@@ -6,7 +6,7 @@ import kotlinx.coroutines.channels.ReceiveChannel
 import kotlinx.coroutines.channels.SendChannel
 import kotlinx.coroutines.channels.produce
 
-typealias Effect<EffectCtx, State> = suspend (EffectContextWrapper<EffectCtx, State>, State) -> Unit
+typealias Effect<EffectCtx, State> = suspend MessagesChannelProvider<EffectCtx, State>.(EffectCtx, State) -> Unit
 typealias Msg<EffectCtx, State> = (State) -> Pair<State, List<Effect<EffectCtx, State>>>
 typealias RenderState<View, State> = (View, State) -> Unit
 typealias RenderEquals<State> = (old: State, new: State) -> Boolean
@@ -55,20 +55,14 @@ fun <V, S> CoroutineScope.renderStates(
     }
 )
 
-interface EffectContextWrapper<EffectCtx, State> {
-    val channel: SendChannel<Msg<EffectCtx, State>>
-    val value: EffectCtx
+interface MessagesChannelProvider<EffectCtx, State> {
+    val messages: SendChannel<Msg<EffectCtx, State>>
 }
 
 private fun <EffectCtx, State> wrap(
-    ctx: EffectCtx,
     channel: SendChannel<Msg<EffectCtx, State>>
-): EffectContextWrapper<EffectCtx, State> = object : EffectContextWrapper<EffectCtx, State> {
-    override val channel: SendChannel<Msg<EffectCtx, State>>
-        get() = channel
-
-    override val value: EffectCtx
-        get() = ctx
+): MessagesChannelProvider<EffectCtx, State> = object : MessagesChannelProvider<EffectCtx, State> {
+    override val messages: SendChannel<Msg<EffectCtx, State>> get() = channel
 }
 
 @Suppress("EXPERIMENTAL_API_USAGE")
@@ -90,7 +84,7 @@ abstract class ElmController<EffectCtx, State>(default: State) {
                 val (new, effects) = msg(state)
                 state = new
                 _states.send(new)
-                effects.forEach { launch { it(wrap(effectContext(), messages), state) } }
+                effects.forEach { launch { it(wrap(messages), effectContext(), state) } }
             }
         }
         messages.offer(init())
