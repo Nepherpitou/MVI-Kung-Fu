@@ -4,7 +4,6 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.ReceiveChannel
 import kotlinx.coroutines.channels.SendChannel
-import kotlinx.coroutines.channels.produce
 
 typealias Effect<EffectCtx, State> = suspend MessagesChannelProvider<EffectCtx, State>.(EffectCtx, State) -> Unit
 typealias Msg<EffectCtx, State> = (State) -> Pair<State, List<Effect<EffectCtx, State>>>
@@ -43,17 +42,22 @@ suspend fun <View, EffectCtx, State> renderStateEffect(
 ): Effect<EffectCtx, State> =
     { _, state -> withContext(Dispatchers.Main) { renders.forEach { (_, r) -> r(view, state) } } }
 
-@ExperimentalCoroutinesApi
-fun <V, S> CoroutineScope.renderStates(
-    states: ReceiveChannel<S>,
-    renders: List<Render<V, S>>
-): ReceiveChannel<(V) -> Unit> = flatten(
-    produce {
-        for ((o, n) in windowPaired(states)) send(
-            renders.filter { (f, _) -> f(o, n) }.map { (_, r) -> { v: V -> r(v, n) } }
-        )
+fun <V, S> renderWatcher(view: V, renders: List<Render<V, S>>): (S) -> Unit {
+    val buffer: MutableList<S> = mutableListOf()
+    return { s ->
+        buffer.add(s)
+        while (buffer.size > 2) buffer.removeAt(0)
+        if (buffer.size == 2) renders
+            .filter { (f, _) -> f(buffer.first(), buffer.last()) }
+            .forEach { (_, f) -> f(view, buffer.last()) }
     }
-)
+}
+
+fun <S> debugWatcher(log: (String) -> Unit): (S) -> Unit = { log("New state is $it") }
+
+suspend fun <S> watchChannel(channel: ReceiveChannel<S>, watchers: List<(S) -> Unit>) {
+    for (s in channel) watchers.forEach { w -> w(s) }
+}
 
 interface MessagesChannelProvider<EffectCtx, State> {
     val messages: SendChannel<Msg<EffectCtx, State>>

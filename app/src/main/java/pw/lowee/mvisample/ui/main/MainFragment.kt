@@ -16,7 +16,6 @@ import kotlinx.android.parcel.Parcelize
 import kotlinx.android.synthetic.main.fragment_main.*
 import kotlinx.android.synthetic.main.fragment_main.view.*
 import kotlinx.coroutines.*
-import kotlinx.coroutines.channels.broadcast
 import org.koin.android.ext.android.get
 import org.koin.android.ext.android.inject
 import pw.lowee.mvikungfu.*
@@ -73,7 +72,13 @@ class MainFragment : Fragment() {
     private val effectCtx = object : MainCtx {
         override val repository = MainRepository(get())
         override val failToast: (Exception) -> Unit =
-            { ex -> scope.launch { context?.let { Toast.makeText(it, ex.message, Toast.LENGTH_LONG).show() } } }
+            { ex ->
+                scope.launch {
+                    context?.let {
+                        Toast.makeText(it, ex.message, Toast.LENGTH_LONG).show()
+                    }
+                }
+            }
     }
     private val controller by lazy { MainController(effectCtx) }
     private val renders: List<MainRender> = listOf(
@@ -98,16 +103,16 @@ class MainFragment : Fragment() {
         super.onViewCreated(view, savedInstanceState)
         scope.launch {
             while (!controller.states.isEmpty) controller.states.receive()
-            val os = controller.states.broadcast(1024)::openSubscription
-            val (rs, ss, ls) = Triple(os(), os(), os())
-            launch { for (r in renderStates(rs, renders)) r(this@MainFragment) }
             launch {
-                for (s in ss) saveState = {
-                    it.putParcelable("state", s)
-                    Log.d("State", "Saved: $s")
-                }
+                watchChannel(
+                    controller.states,
+                    listOf(
+                        renderWatcher(this@MainFragment, renders),
+                        debugWatcher { Log.d("State", it) },
+                        { saveState = { bundle -> bundle.putParcelable("state", it) } }
+                    )
+                )
             }
-            launch { for (s in ls) Log.d("State", "$s") }
             savedInstanceState
                 ?.getParcelable<MainState>("state")
                 ?.also { Log.d("State", "Restored: $it") }
