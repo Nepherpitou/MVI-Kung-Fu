@@ -6,6 +6,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlin.coroutines.CoroutineContext
 
+typealias UserInput<T> = Pair<T, Boolean>
 typealias EitherE<R> = Either<Exception, R>
 
 sealed class Either<out E, out V> {
@@ -39,3 +40,6 @@ fun <L, R> Either<L, R>.orNull(): R? = when (this) {
     is Right -> this.v
     else -> null
 }
+
+fun <T> UserInput<T>.nonUser() = first.takeUnless { second }
+fun <T> UserInput<T>.any() = first

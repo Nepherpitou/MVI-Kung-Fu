@@ -8,10 +8,11 @@ import androidx.fragment.app.Fragment
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
-import org.koin.android.ext.android.inject
-import pw.lowee.mvikungfu.Effect
-import pw.lowee.mvikungfu.ElmController
-import pw.lowee.mvikungfu.Msg
+import org.koin.core.KoinComponent
+import org.koin.core.inject
+import pw.lowee.mvikungfu.ElmEffect
+import pw.lowee.mvikungfu.ElmMsg
+import pw.lowee.mvikungfu.defaultController
 import pw.lowee.mvikungfu.msgEffects
 import pw.lowee.mvisample.R
 import pw.lowee.mvisample.ui.Screens
@@ -21,17 +22,15 @@ data class SplashState(
     val ready: Boolean = false
 )
 
-interface SplashCtx {
-    suspend fun route(block: Router.() -> Unit)
+class SplashCtx : KoinComponent {
+    val router: Router by inject()
+    suspend fun route(block: Router.() -> Unit) {
+        withContext(Dispatchers.Main) { block(router) }
+    }
 }
 
-private typealias SplashMsg = Msg<SplashCtx, SplashState>
-private typealias SplashEffect = Effect<SplashCtx, SplashState>
-
-fun SplashController(context: SplashCtx, state: SplashState) = object : ElmController<SplashCtx, SplashState>(state) {
-    override fun effectContext(): SplashCtx = context
-    override fun init(): SplashMsg = msgInit()
-}
+typealias SplashMsg = ElmMsg<SplashCtx, SplashState>
+typealias SplashEffect = ElmEffect<SplashCtx, SplashState>
 
 fun msgInit(): SplashMsg = msgEffects(
     { it },
@@ -45,13 +44,8 @@ fun effectInit(): SplashEffect = { ctx, _ ->
 
 class SplashFragment : Fragment() {
 
-    private val router: Router by inject()
-    private val effectContext = object : SplashCtx {
-        override suspend fun route(block: Router.() -> Unit) {
-            withContext(Dispatchers.Main) { block(router) }
-        }
-    }
-    private val controller = SplashController(effectContext, SplashState())
+    private val effectContext = SplashCtx()
+    private val controller = defaultController(SplashState()) { effectContext }
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View? {
         return inflater.inflate(R.layout.fragment_splash, container, false)
@@ -59,7 +53,7 @@ class SplashFragment : Fragment() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        controller.start()
+        controller.start(msgInit())
     }
 
     override fun onDestroy() {
