@@ -11,7 +11,7 @@ import kotlinx.coroutines.withContext
 import org.koin.core.KoinComponent
 import org.koin.core.inject
 import pw.lowee.mvikungfu.ElmEffect
-import pw.lowee.mvikungfu.ElmMsg
+import pw.lowee.mvikungfu.ElmMessage
 import pw.lowee.mvikungfu.defaultController
 import pw.lowee.mvikungfu.msgEffects
 import pw.lowee.mvisample.R
@@ -29,7 +29,7 @@ class SplashCtx : KoinComponent {
     }
 }
 
-typealias SplashMsg = ElmMsg<SplashCtx, SplashState>
+typealias SplashMsg = ElmMessage<SplashCtx, SplashState>
 typealias SplashEffect = ElmEffect<SplashCtx, SplashState>
 
 fun msgInit(): SplashMsg = msgEffects(
@@ -44,8 +44,7 @@ fun effectInit(): SplashEffect = { ctx, _ ->
 
 class SplashFragment : Fragment() {
 
-    private val effectContext = SplashCtx()
-    private val controller = defaultController(SplashState()) { effectContext }
+    private val controller = defaultController(SplashState(), SplashCtx())
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View? {
         return inflater.inflate(R.layout.fragment_splash, container, false)

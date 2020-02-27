@@ -5,7 +5,7 @@ import kotlinx.android.parcel.Parcelize
 import org.koin.core.KoinComponent
 import org.koin.core.get
 import pw.lowee.mvikungfu.ElmEffect
-import pw.lowee.mvikungfu.ElmMsg
+import pw.lowee.mvikungfu.ElmMessage
 import pw.lowee.mvikungfu.ElmRender
 import pw.lowee.mvisample.UserInput
 import pw.lowee.mvisample.models.GifObject
@@ -23,6 +23,6 @@ class MainContext : KoinComponent {
     var errorToast: (Exception) -> Unit = {}
 }
 
-typealias MainMsg = ElmMsg<MainContext, MainState>
+typealias MainMsg = ElmMessage<MainContext, MainState>
 typealias MainEffect = ElmEffect<MainContext, MainState>
 typealias MainRender = ElmRender<MainState>

@@ -12,6 +12,7 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import kotlinx.android.synthetic.main.fragment_main.view.*
 import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.collect
 import org.koin.android.ext.android.inject
 import pw.lowee.mvikungfu.*
 import pw.lowee.mvisample.R
@@ -26,11 +27,11 @@ class MainFragment : Fragment() {
 
     private var saveState: (Bundle) -> Unit = {}
 
-    private val elmContext = MainContext()
-    private val elmController = defaultController(MainState()) { elmContext }
+    private val elmController = defaultController(MainState(), MainContext())
+    private var renderJob: Job? = null
 
     private val imageLoader: ImageLoader by inject()
-    val queryWatcher = textWatcher { elmController.messages.offer(MainMessages.msgQuery(it to true)) }
+    private val queryWatcher = textWatcher { elmController.messages.offer(MainMessages.msgQuery(it to true)) }
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View? {
         return inflater.inflate(R.layout.fragment_main, container, false)
@@ -54,23 +55,10 @@ class MainFragment : Fragment() {
         view.recycler.adapter = adapter
         view.recycler.layoutManager = LinearLayoutManager(view.context, RecyclerView.VERTICAL, false)
         view.recycler.addOnScrollListener(loadMoreListener { elmController.messages.offer(MainMessages.msgLoadMore()) })
-        scope.launch {
-            while (!elmController.states.isEmpty) elmController.states.receive()
-            launch {
-                watchState(
-                    elmController,
-                    listOf(
-                        debugWatcher { Log.d("Main", it) },
-                        renderWatcher(renders),
-                        { s ->
-                            saveState = {
-                                it.putParcelable("state", s)
-                                Log.d("State", "Saved: $s")
-                            }
-                        }
-                    )
-                )
-            }
+        renderJob = scope.launch {
+            launch { elmController.stateFlow().collect(debugWatcher { Log.d("Main", it) }) }
+            launch { elmController.stateFlow().collect(renderWatcher(renders)) }
+            launch { elmController.stateFlow().collect { state -> saveState = { it.putParcelable("state", state) } } }
             savedInstanceState
                 ?.getParcelable<MainState>("state")
                 ?.also { Log.d("State", "Restored: $it") }
@@ -81,7 +69,7 @@ class MainFragment : Fragment() {
 
     override fun onDestroyView() {
         super.onDestroyView()
-        supervisor.cancelChildren()
+        renderJob?.cancel()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -92,6 +80,7 @@ class MainFragment : Fragment() {
     override fun onDestroy() {
         super.onDestroy()
         elmController.stop()
+        supervisor.cancelChildren()
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
